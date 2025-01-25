@@ -1,23 +1,53 @@
-格式化汇总表显示格式 = 
-VAR Current_Indicator = SELECTEDVALUE('汇总'[指标])
-VAR Data_Value = SUM('汇总'[数据值])
+明细表列顺序通用 = 
+VAR Current_Indicator = [指标]
+VAR IndicatorType = 
+    SWITCH(
+        TRUE(),
+        CONTAINSSTRING(Current_Indicator, "Share"), "Share",
+        CONTAINSSTRING(Current_Indicator, "实际产值"), "实际产值",
+        CONTAINSSTRING(Current_Indicator, "总数"), "总数",
+        CONTAINSSTRING(Current_Indicator, "理论产值"), "理论产值",
+        CONTAINSSTRING(Current_Indicator, "Gap"), "Gap",
+        ""
+    )
+VAR YearMonthPart = 
+    // 尝试提取前6位字符并判断是否为数字
+    VAR FirstSixChars = LEFT(Current_Indicator, 6)
+    VAR IsNumberSix = NOT(ISERROR(VALUE(FirstSixChars)))
+    VAR ExtractedPartSix = IF(IsNumberSix, FirstSixChars, "")
+    // 若前6位不是数字，尝试提取前4位字符并判断是否为数字
+    VAR FirstFourChars = LEFT(Current_Indicator, 4)
+    VAR IsNumberFour = NOT(ISERROR(VALUE(FirstFourChars)))
+    VAR ExtractedPartFour = IF(IsNumberFour, FirstFourChars, "")
+    RETURN
+    IF(ExtractedPartSix <> "", ExtractedPartSix, ExtractedPartFour)
+VAR NewIndicator = 
+    SWITCH(
+        TRUE(),
+		IndicatorType = "Share", "1 - " & SUBSTITUTE(Current_Indicator,"Share"," Share"),//在这里更改你想要的列名
+        IndicatorType = "实际产值", "5 - " & SUBSTITUTE(Current_Indicator,"实际产值"," TTL shipment"),//在这里更改你想要的列名
+        IndicatorType = "总数", "6 - " & SUBSTITUTE(Current_Indicator,"总数","我的总数"),//在这里更改你想要的列名
+        IndicatorType = "理论产值", "7 - " & SUBSTITUTE(Current_Indicator,"理论产值"," Target QTY"),//在这里更改你想要的列名
+		IndicatorType = "Gap", "8 - " & SUBSTITUTE(Current_Indicator,"Gap"," QTY Gap"),//在这里更改你想要的列名
+        ISNUMBER(VALUE(YearMonthPart)), "2 - " & YearMonthPart,
+        Current_Indicator
+    )
 RETURN
-SWITCH(
-    TRUE(),
-    // 判断数据是否大于0小于1
-    AND(Data_Value > 0, Data_Value < 1),
-        IF(
-            NOT(ISBLANK(Data_Value)),
-            FORMAT(Data_Value, "0.00%"),
-            BLANK()
-        ),
-    // 其他情况（针对整数情况）
-    TRUE,
-        IF(
-            NOT(ISBLANK(Data_Value)),
-            FORMAT(Data_Value, "#,##0"),
-            BLANK()
-        )
+[季度] & " - " & NewIndicator
+
+
+显示明细列表列标题 = 
+VAR Full_Name = [明细表列顺序通用]
+RETURN
+IF(
+    NOT(ISBLANK(Full_Name)),
+    VAR HyphenPosition = FIND("-", Full_Name, 1, 0)
+    VAR SecondHyphenPosition = FIND("-", Full_Name, HyphenPosition + 1, 0)
+    VAR AfterSecondHyphen = RIGHT(Full_Name, LEN(Full_Name) - SecondHyphenPosition)
+    VAR TrimmedName = TRIM(AfterSecondHyphen)
+    RETURN
+    TrimmedName,
+    BLANK()
 )
 
 
@@ -26,11 +56,11 @@ VAR Current_Indicator = SELECTEDVALUE('明细'[指标])
 RETURN
 SWITCH(
     TRUE(),
-    Current_Indicator = "Share", 
+    CONTAINSSTRING(Current_Indicator, "Share"), 
         VAR Share_Value = 
             CALCULATE(
                 SUM('明细'[数据值]),
-                FILTER('明细', [指标] = "Share")
+                FILTER('明细', CONTAINSSTRING([指标], "Share"))
             )
         RETURN
         IF(
@@ -59,7 +89,8 @@ VAR IndicatorType =
         CONTAINSSTRING(Current_Indicator, "实际总值"), "实际总值",
         CONTAINSSTRING(Current_Indicator, "理论总值"), "理论总值",
         CONTAINSSTRING(Current_Indicator, "实际生产比例"), "实际生产比例",
-
+        CONTAINSSTRING(Current_Indicator, "Gap_数量"), "Gap_数量",
+        CONTAINSSTRING(Current_Indicator, "Gap_共享"), "Gap_共享",
         ""
     )
 VAR YearMonthPart = 
@@ -76,15 +107,18 @@ VAR YearMonthPart =
 VAR NewIndicator = 
     SWITCH(
         TRUE(),
-        IndicatorType = "Share", "1 - Share",
-        IndicatorType = "实际总值", "6 - " & SUBSTITUTE(Current_Indicator,"实际总值","我的实际总值"),//在这里更改你想要的列名
-        IndicatorType = "理论总值", "5 - " & SUBSTITUTE(Current_Indicator,"理论总值","我的理论总值"),//在这里更改你想要的列名
-        IndicatorType = "实际生产比例", "7 - " & SUBSTITUTE(Current_Indicator,"实际生产比例","我的实际生产比例"),//在这里更改你想要的列名
+        IndicatorType = "Share", "1 - " & SUBSTITUTE(Current_Indicator,"Share"," Share"),
+        IndicatorType = "实际总值", "5 - " & SUBSTITUTE(Current_Indicator,"实际总值"," TTL shipment"),
+        IndicatorType = "理论总值", "6 - " & SUBSTITUTE(Current_Indicator,"理论总值"," Target QTY"),
+        IndicatorType = "实际生产比例", "8 - " & SUBSTITUTE(Current_Indicator,"实际生产比例"," Actual Share"),
+        IndicatorType = "Gap_数量", "7 - " & SUBSTITUTE(Current_Indicator,"Gap_数量"," QTY Gap"),
+        IndicatorType = "Gap_共享", "9 - " & SUBSTITUTE(Current_Indicator,"Gap_共享"," Share Gap"),
         ISNUMBER(VALUE(YearMonthPart)), "2 - " & YearMonthPart,
         Current_Indicator
     )
+// 先按季度排序，再按 NewIndicator 排序
 RETURN
-NewIndicator
+[季度] & " - " & NewIndicator
 
 
 显示汇总表列标题 = 
@@ -93,62 +127,39 @@ RETURN
 IF(
     NOT(ISBLANK(Full_Name)),
     VAR HyphenPosition = FIND("-", Full_Name, 1, 0)
-    VAR AfterHyphen = RIGHT(Full_Name, LEN(Full_Name) - HyphenPosition)
+    VAR SecondHyphenPosition = FIND("-", Full_Name, HyphenPosition + 1, 0)
+    VAR AfterSecondHyphen = RIGHT(Full_Name, LEN(Full_Name) - SecondHyphenPosition)
+    VAR TrimmedName = TRIM(AfterSecondHyphen)
     RETURN
-    AfterHyphen,
+    TrimmedName,
     BLANK()
 )
 
 
-
-
-明细表列顺序通用 = 
-VAR Current_Indicator = [指标]
-VAR IndicatorType = 
-    SWITCH(
-        TRUE(),
-        CONTAINSSTRING(Current_Indicator, "Share"), "Share",
-        CONTAINSSTRING(Current_Indicator, "实际产值"), "实际产值",
-        CONTAINSSTRING(Current_Indicator, "总数"), "总数",
-        CONTAINSSTRING(Current_Indicator, "理论产值"), "理论产值",
-        CONTAINSSTRING(Current_Indicator, "Gap"), "Gap",
-        ""
-    )
-VAR YearMonthPart = 
-    // 尝试提取前6位字符并判断是否为数字
-    VAR FirstSixChars = LEFT(Current_Indicator, 6)
-    VAR IsNumberSix = NOT(ISERROR(VALUE(FirstSixChars)))
-    VAR ExtractedPartSix = IF(IsNumberSix, FirstSixChars, "")
-    // 若前6位不是数字，尝试提取前4位字符并判断是否为数字
-    VAR FirstFourChars = LEFT(Current_Indicator, 4)
-    VAR IsNumberFour = NOT(ISERROR(VALUE(FirstFourChars)))
-    VAR ExtractedPartFour = IF(IsNumberFour, FirstFourChars, "")
-    RETURN
-    IF(ExtractedPartSix <> "", ExtractedPartSix, ExtractedPartFour)
-VAR NewIndicator = 
-    SWITCH(
-        TRUE(),
-        IndicatorType = "Share", "1 - Share",
-        IndicatorType = "实际产值", "5 - " & SUBSTITUTE(Current_Indicator,"实际产值","我的实际产值"),//在这里更改你想要的列名
-        IndicatorType = "总数", "6 - " & SUBSTITUTE(Current_Indicator,"总数","我的总数"),//在这里更改你想要的列名
-        IndicatorType = "理论产值", "7 - " & SUBSTITUTE(Current_Indicator,"理论产值","我的理论产值"),//在这里更改你想要的列名
-        IndicatorType = "Gap", "8 - Gap",
-        ISNUMBER(VALUE(YearMonthPart)), "2 - " & YearMonthPart,
-        Current_Indicator
-    )
+格式化汇总表显示格式 = 
+VAR Current_Indicator = SELECTEDVALUE('汇总'[指标])
 RETURN
-NewIndicator
-
-
-
-显示明细列表列标题 = 
-VAR Full_Name = [明细表列顺序通用]
-RETURN
-IF(
-    NOT(ISBLANK(Full_Name)),
-    VAR HyphenPosition = FIND("-", Full_Name, 1, 0)
-    VAR AfterHyphen = RIGHT(Full_Name, LEN(Full_Name) - HyphenPosition)
-    RETURN
-    AfterHyphen,
-    BLANK()
+SWITCH(
+    TRUE(),
+    CONTAINSSTRING(Current_Indicator, "Share") || CONTAINSSTRING(Current_Indicator, "实际生产比例") || CONTAINSSTRING(Current_Indicator, "Gap_共享"), 
+        VAR Share_Value = 
+            CALCULATE(
+                SUM('汇总'[数据值]),
+                FILTER('汇总', CONTAINSSTRING([指标], "Share") || CONTAINSSTRING([指标], "实际生产比例") || CONTAINSSTRING([指标], "Gap_共享"))
+            )
+        RETURN
+        IF(
+            NOT(ISBLANK(Share_Value)),
+            FORMAT(Share_Value, "0.00%"),
+            BLANK()
+        ),
+    -- 动态处理其他列，添加格式化逻辑
+    TRUE,
+        VAR Other_Value = SUM('汇总'[数据值])
+        RETURN
+        IF(
+            NOT(ISBLANK(Other_Value)),
+            FORMAT(Other_Value, "#,##0"),
+            BLANK()
+        )
 )
