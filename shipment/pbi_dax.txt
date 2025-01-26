@@ -53,30 +53,61 @@ IF(
 
 格式化明细表显示格式 = 
 VAR Current_Indicator = SELECTEDVALUE('明细'[指标])
+VAR CurrentSupplier = SELECTEDVALUE('明细'[Suppliers])
+VAR IsTotalIndicator = CONTAINSSTRING(Current_Indicator, "总数")
+
+VAR SupplierTotalValue = 
+    IF(
+        IsTotalIndicator,
+        VAR SupplierRows = 
+            FILTER(
+                '明细',
+                '明细'[KB Spec] = SELECTEDVALUE('明细'[KB Spec]) &&
+                '明细'[ODM] = SELECTEDVALUE('明细'[ODM]) &&
+                CONTAINSSTRING('明细'[指标], "总数")
+            )
+        RETURN
+            IF(
+                HASONEVALUE('明细'[Suppliers]),
+                SUM('明细'[数据值]),
+                -- 若不在供应商级别，取第一个供应商的值
+                CALCULATE(
+                    SUM('明细'[数据值]),
+                    TOPN(1, SupplierRows, '明细'[Suppliers], ASC)
+                )
+            ),
+        BLANK()
+    )
+
+VAR Share_Value = 
+    CALCULATE(
+        SUM('明细'[数据值]),
+        FILTER('明细', CONTAINSSTRING('明细'[指标], "Share"))
+    )
+
+VAR Other_Value = SUM('明细'[数据值])
+
 RETURN
 SWITCH(
     TRUE(),
-    CONTAINSSTRING(Current_Indicator, "Share"), 
-        VAR Share_Value = 
-            CALCULATE(
-                SUM('明细'[数据值]),
-                FILTER('明细', CONTAINSSTRING([指标], "Share"))
-            )
-        RETURN
-        IF(
-            NOT(ISBLANK(Share_Value)),
-            FORMAT(Share_Value, "0.00%"),
-            BLANK()
-        ),
-    -- 动态处理其他列，添加格式化逻辑
+    CONTAINSSTRING(Current_Indicator, "Share"),
+    IF(
+        NOT(ISBLANK(Share_Value)),
+        FORMAT(Share_Value, "0.00%"),
+        BLANK()
+    ),
+    IsTotalIndicator,
+    IF(
+        NOT(ISBLANK(SupplierTotalValue)),
+        FORMAT(SupplierTotalValue, "#,##0"),
+        BLANK()
+    ),
     TRUE,
-        VAR Other_Value = SUM('明细'[数据值])
-        RETURN
-        IF(
-            NOT(ISBLANK(Other_Value)),
-            FORMAT(Other_Value, "#,##0"),
-            BLANK()
-        )
+    IF(
+        NOT(ISBLANK(Other_Value)),
+        FORMAT(Other_Value, "#,##0"),
+        BLANK()
+    )
 )
 
 
