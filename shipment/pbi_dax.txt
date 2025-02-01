@@ -53,60 +53,105 @@ IF(
 
 格式化明细表显示格式 = 
 VAR Current_Indicator = SELECTEDVALUE('明细'[指标])
-VAR CurrentSupplier = SELECTEDVALUE('明细'[Suppliers])
-VAR IsTotalIndicator = CONTAINSSTRING(Current_Indicator, "总数")
-
-VAR SupplierTotalValue = 
+VAR Current_KB_Spec = SELECTEDVALUE('明细'[KB Spec])
+VAR Current_ODM = SELECTEDVALUE('明细'[ODM])
+VAR Current_Supplier = SELECTEDVALUE('明细'[Suppliers])
+VAR Is_Total_Row = ISFILTERED('明细'[KB Spec]) = FALSE()  -- 判断是否为总计行
+RETURN
+IF(
+    CONTAINSSTRING(Current_Indicator, "总数"),
     IF(
-        IsTotalIndicator,
-        VAR SupplierRows = 
-            FILTER(
-                '明细',
-                '明细'[KB Spec] = SELECTEDVALUE('明细'[KB Spec]) &&
-                '明细'[ODM] = SELECTEDVALUE('明细'[ODM]) &&
-                CONTAINSSTRING('明细'[指标], "总数")
-            )
-        RETURN
-            IF(
-                HASONEVALUE('明细'[Suppliers]),
-                SUM('明细'[数据值]),
-                -- 若不在供应商级别，取第一个供应商的值
+        Is_Total_Row,
+        -- 总计行：累计所有 KB Spec 级别已显示的数
+        FORMAT(
+            SUMX(
+                VALUES('明细'[KB Spec]),
                 CALCULATE(
-                    SUM('明细'[数据值]),
-                    TOPN(1, SupplierRows, '明细'[Suppliers], ASC)
+                    SUMX(
+                        SUMMARIZE(
+                            FILTER('明细', CONTAINSSTRING('明细'[指标], "总数")),
+                            '明细'[ODM],
+                            "ODM_Value", 
+                            CALCULATE(
+                                SUM('明细'[数据值]),
+                                TOPN(1, VALUES('明细'[Suppliers]), '明细'[Suppliers], ASC)
+                            )
+                        ),
+                        [ODM_Value]
+                    )
                 )
             ),
-        BLANK()
-    )
-
-VAR Share_Value = 
-    CALCULATE(
-        SUM('明细'[数据值]),
-        FILTER('明细', CONTAINSSTRING('明细'[指标], "Share"))
-    )
-
-VAR Other_Value = SUM('明细'[数据值])
-
-RETURN
-SWITCH(
-    TRUE(),
-    CONTAINSSTRING(Current_Indicator, "Share"),
-    IF(
-        NOT(ISBLANK(Share_Value)),
-        FORMAT(Share_Value, "0.00%"),
-        BLANK()
+            "#,##0"  -- 保留科学计数法，去掉小数点
+        ),
+        IF(
+            NOT(ISBLANK(Current_KB_Spec)) && ISBLANK(Current_ODM) && ISBLANK(Current_Supplier),
+            -- KB Spec 级别：汇总 ODM 级别已显示的值
+            FORMAT(
+                CALCULATE(
+                    SUMX(
+                        SUMMARIZE(
+                            FILTER('明细', CONTAINSSTRING('明细'[指标], "总数")),
+                            '明细'[ODM],
+                            "ODM_Value", 
+                            CALCULATE(
+                                SUM('明细'[数据值]),
+                                TOPN(1, VALUES('明细'[Suppliers]), '明细'[Suppliers], ASC)
+                            )
+                        ),
+                        [ODM_Value]
+                    ),
+                    FILTER('明细', '明细'[KB Spec] = Current_KB_Spec)
+                ),
+                "#,##0"  -- 保留科学计数法，去掉小数点
+            ),
+            IF(
+                NOT(ISBLANK(Current_ODM)) && ISBLANK(Current_Supplier),
+                -- ODM 级别：显示任意一个 Suppliers 的值
+                FORMAT(
+                    CALCULATE(
+                        SUM('明细'[数据值]),
+                        FILTER(
+                            '明细',
+                            CONTAINSSTRING('明细'[指标], "总数") 
+                            && '明细'[ODM] = Current_ODM
+                        ),
+                        TOPN(1, VALUES('明细'[Suppliers]), '明细'[Suppliers], ASC)
+                    ),
+                    "#,##0"  -- 保留科学计数法，去掉小数点
+                ),
+                -- 其他情况：保持原有逻辑
+                FORMAT(SUM('明细'[数据值]), "#,##0")  -- 保留科学计数法，去掉小数点
+            )
+        )
     ),
-    IsTotalIndicator,
+    -- 非“总数”列的原有逻辑
     IF(
-        NOT(ISBLANK(SupplierTotalValue)),
-        FORMAT(SupplierTotalValue, "#,##0"),
-        BLANK()
-    ),
-    TRUE,
-    IF(
-        NOT(ISBLANK(Other_Value)),
-        FORMAT(Other_Value, "#,##0"),
-        BLANK()
+        CONTAINSSTRING(Current_Indicator, "Share"),
+        IF(
+            Is_Total_Row,
+            -- 总计行：显示为空
+            BLANK(),
+            -- 非总计行：原有逻辑
+            VAR Share_Value = 
+                CALCULATE(
+                    SUM('明细'[数据值]),
+                    FILTER('明细', CONTAINSSTRING([指标], "Share"))
+                )
+            RETURN
+            IF(
+                NOT(ISBLANK(Share_Value)),
+                FORMAT(Share_Value, "0.00%"),
+                BLANK()
+            )
+        ),
+        -- 其他列的格式化逻辑
+        VAR Other_Value = SUM('明细'[数据值])
+        RETURN
+        IF(
+            NOT(ISBLANK(Other_Value)),
+            FORMAT(Other_Value, "#,##0"),
+            BLANK()
+        )
     )
 )
 
